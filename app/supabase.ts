@@ -8,5 +8,11 @@ export async function saveSession(session:any){const jar=await cookies();jar.set
 export async function clearSession(){const jar=await cookies();jar.set('ac-access','',{...options,maxAge:0});jar.set('ac-refresh','',{...options,maxAge:0});}
 export async function authorized(){const jar=await cookies();let token=jar.get('ac-access')?.value;const refresh=jar.get('ac-refresh')?.value;let response=token?await authRequest('user',undefined,token):null;if(!response?.ok&&refresh){const r=await authRequest('token?grant_type=refresh_token',{refresh_token:refresh});if(r.ok){const session=await r.json();await saveSession(session);token=session.access_token;response=await authRequest('user',undefined,token);}}
 if(!token||!response?.ok)throw new HttpError(401,'Entre com seu e-mail e senha.');const user=await response.json();if(!user.email_confirmed_at||await rest('rpc/is_site_admin',{method:'POST',body:'{}'},token)!==true)throw new HttpError(403,'Esta conta não tem acesso ao painel.');return {...user,token};}
-export function sameOrigin(req:Request){if(req.headers.get('Origin')!==new URL(req.url).origin)throw new HttpError(403,'Origem não autorizada.');}
+export function sameOrigin(req:Request){
+// Netlify can pass an internal URL to Next.js. Trust the site's explicit public
+// address, never a caller-supplied forwarded host, when checking browser writes.
+const publicOrigin=new URL(process.env.SITE_URL||'https://arianne-costa-imoveis.netlify.app').origin;
+const origin=req.headers.get('Origin');
+if(origin!==publicOrigin&&origin!==new URL(req.url).origin)throw new HttpError(403,'Origem não autorizada.');
+}
 export const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
