@@ -1,0 +1,5 @@
+import { sqliteTable, text, integer, primaryKey, index } from 'drizzle-orm/sqlite-core';
+export const propertyOverrides = sqliteTable('property_overrides',{id:text('id').primaryKey(),data:text('data').notNull(),revision:integer('revision').notNull().default(1),updatedAt:text('updated_at').notNull()});
+export const adminIdentity = sqliteTable('admin_identity',{email:text('email').primaryKey(),userId:text('user_id').notNull()});
+export const leads = sqliteTable('leads',{id:text('id').primaryKey(),name:text('name').notNull(),phone:text('phone').notNull(),email:text('email').notNull().default(''),goal:text('goal').notNull(),wish:text('wish').notNull().default(''),status:text('status').notNull().default('Novo'),createdAt:text('created_at').notNull()},t=>[index('idx_leads_created_at').on(t.createdAt)]);
+export const dailyMetrics = sqliteTable('daily_metrics',{day:text('day').notNull(),route:text('route').notNull(),kind:text('kind').notNull(),count:integer('count').notNull().default(0)},t=>[primaryKey({columns:[t.day,t.route,t.kind]})]);
