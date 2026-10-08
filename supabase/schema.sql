@@ -1,0 +1,36 @@
+create schema if not exists site_private;
+revoke all on schema site_private from public, anon;
+grant usage on schema site_private to authenticated;
+create table site_private.admin_emails(email text primary key check(email=lower(email)));
+alter table site_private.admin_emails enable row level security;
+revoke all on site_private.admin_emails from anon,authenticated;
+create function site_private.is_admin() returns boolean language sql stable security definer set search_path='' as $$
+ select auth.uid() is not null and exists(select 1 from auth.users u join site_private.admin_emails a on a.email=lower(u.email) where u.id=auth.uid() and u.email_confirmed_at is not null) and exists(select 1 from auth.sessions s where s.user_id=auth.uid() and s.id::text=auth.jwt()->>'session_id');
+$$;
+revoke all on function site_private.is_admin() from public,anon;
+grant execute on function site_private.is_admin() to authenticated;
+create function public.is_site_admin() returns boolean language sql stable security invoker set search_path='' as $$ select site_private.is_admin(); $$;
+revoke all on function public.is_site_admin() from public,anon;
+grant execute on function public.is_site_admin() to authenticated;
+create table public.property_overrides(id text primary key check(id ~ '^[a-z0-9-]{1,80}$'),data jsonb not null,revision integer not null default 1 check(revision>0),updated_at timestamptz not null default now());
+create table public.leads(id uuid primary key,name text not null check(length(name) between 2 and 100),phone text not null check(length(phone) between 10 and 30),email text not null default '' check(length(email)<=254),goal text not null check(length(goal) between 1 and 160),wish text not null default '' check(length(wish)<=3000),status text not null default 'Novo' check(status in ('Novo','Em atendimento','Visita agendada','Concluído')),created_at timestamptz not null default now());
+create index leads_created_idx on public.leads(created_at desc);
+create table public.daily_metrics(day date not null,route text not null check(length(route)<=100),kind text not null check(kind in ('view','whatsapp')),count integer not null default 0 check(count>=0),primary key(day,route,kind));
+alter table public.property_overrides enable row level security;
+alter table public.leads enable row level security;
+alter table public.daily_metrics enable row level security;
+revoke all on public.property_overrides,public.leads,public.daily_metrics from anon,authenticated;
+grant select,insert,update,delete on public.property_overrides,public.leads,public.daily_metrics to service_role;
+create policy admin_properties on public.property_overrides for all to authenticated using((select public.is_site_admin())) with check((select public.is_site_admin()));
+create policy admin_leads on public.leads for all to authenticated using((select public.is_site_admin())) with check((select public.is_site_admin()));
+create policy admin_metrics on public.daily_metrics for select to authenticated using((select public.is_site_admin()));
+grant select,insert,update on public.property_overrides to authenticated;
+grant select,update on public.leads to authenticated;
+grant select on public.daily_metrics to authenticated;
+create function public.increment_site_metric(p_day date,p_route text,p_kind text) returns void language sql security invoker set search_path='' as $$
+ insert into public.daily_metrics(day,route,kind,count) values(p_day,p_route,p_kind,1) on conflict(day,route,kind) do update set count=public.daily_metrics.count+1;
+$$;
+revoke all on function public.increment_site_metric(date,text,text) from public,anon,authenticated;
+grant execute on function public.increment_site_metric(date,text,text) to service_role;
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('property-images','property-images',true,12582912,array['image/jpeg','image/png','image/webp']);
+create policy deny_direct_access on site_private.admin_emails for all to authenticated using(false) with check(false);
